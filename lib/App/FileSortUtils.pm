@@ -3,8 +3,11 @@ package App::FileSortUtils;
 use 5.010001;
 use strict;
 use warnings;
+use Log::ger;
 
 use Exporter 'import';
+use Fcntl ':mode';
+use Perinci::Sub::Util qw(gen_modified_sub);
 
 # AUTHORITY
 # DATE
@@ -17,47 +20,83 @@ my @file_types = qw(file dir);
 
 my @file_fields = qw(name size mtime ctime);
 
-$SPEC{sort_files} = {
-    v => 1.1,
-    summary => 'Sort files in a directory and display the result in a flexible way',
-    description => <<'MARKDOWN',
+our %argspecs_common = (
+    dir => {
+        summary => 'Directory to sort files of, defaults to current directory',
+        schema => 'dirname::default_curdir',
+        pos => 0,
+        tags => ['category:input'],
+    },
 
+    type => {
+        summary => 'Only include files of certain type',
+        schema => ['str*', in=>\@file_types],
+        cmdline_aliases => {
+            t => {},
+            f => {summary=>'Shortcut for --type=file', is_flag=>1, code=>sub { $_[0]{type} = 'file' }},
+            d => {summary=>'Shortcut for --type=dir' , is_flag=>1, code=>sub { $_[0]{type} = 'dir'  }},
+        },
+        tags => ['category:filtering'],
+    },
+
+    detail => {
+        schema => 'true*',
+        cmdline_aliases => {l=>{}},
+        tags => ['category:output'],
+    },
+    num_results => {
+        summary => 'Number of results to return',
+        schema => 'uint*',
+        cmdline_aliases => {n=>{}},
+    },
+    num_ranks => {
+        summary => 'Number of ranks to return',
+        schema => 'uint*',
+        description => <<'MARKDOWN',
+
+Difference between `num_results` and `num_ranks`: `num_results` specifies number
+of results regardless of ranks while `num_ranks` (`-n` option) returns number of
+ranks. For example, if sorting is by reverse size and if `num_results` is set to
+1 and there are 2 files with the same largest size then only 1 of those files
+will be returned. With `num_ranks` set to 1, both files will be returned because
+are they both rank #1.
 
 MARKDOWN
-    args => {
-        dir => {
-            summary => 'Directory to sort files of, defaults to current directory',
-            schema => 'dirname::default_cur',
-            pos => 0,
-            tags => ['category:input'],
-        },
+        cmdline_aliases => {N=>{}},
+    },
+);
 
-        type => {
-            summary => 'Only include files of certain type',
-            schema => ['str*', in=>\@file_types],
-            cmdline_aliases => {
-                t => {},
-                f => {summary=>'Shortcut for --type=file', is_flag=>1, code=>sub { $_[0]{type} = 'file' }},
-                d => {summary=>'Shortcut for --type=dir' , is_flag=>1, code=>sub { $_[0]{type} = 'dir'  }},
-            },
-            tags => ['category:filtering'],
-        },
-
-        by_field => {
-            summary => 'Field name to sort against',
-            schema => ['str*', in=>\@file_fields],
-            tags => ['category:sorting'],
-        },
-        reverse => {
-            summary => 'Reverse order of sorting',
-            schema => 'true*',
-            cmdline_aliases => {r=>{}},
-            tags => ['category:sorting'],
-        },
-        key => {
-            summary => 'Perl code to generate key to sort against',
-            schema => 'code_from_str*',
-            description => <<'MARKDOWN',
+our %argspecs_sort = (
+    by_code => {
+        summary => 'Perl code to sort',
+        schema => 'code_from_str*',
+        tags => ['category:sorting'],
+    },
+    by_sortsub => {
+        summary => 'Sort::Sub routine name to sort',
+        schema =>'str*',
+        'x.completion' => ['sortsub_spec'],
+        tags => ['category:sorting'],
+    },
+    sortsub_args => {
+        summary => 'Arguments to pass to Sort::Sub routine',
+        schema => ['hash*', of=>'str*'],
+    },
+    by_field => {
+        summary => 'Field name to sort against',
+        schema => ['str*', in=>\@file_fields],
+        tags => ['category:sorting'],
+    },
+    reverse => {
+        summary => 'Reverse order of sorting',
+        schema => 'true*',
+        cmdline_aliases => {r=>{}},
+        tags => ['category:sorting'],
+    },
+    key => {
+        summary => 'Perl code to generate key to sort against',
+        schema => 'code_from_str*',
+        description => <<'MARKDOWN',
 
 If `key` option is not specified, then: 1) if sorting is `by_code` then the code
 will receive files as records (hashes) with keys like `name`, `size`, etc; 2) if
@@ -78,15 +117,25 @@ Another example, to generate length of name as key:
 
 MARKDOWN
             tags => ['category:sorting'],
-        },
+    },
+);
 
-        detail => {
-            cmdline_aliases => {l=>{}},
-            tags => ['category:output'],
-        },
+$SPEC{sort_files} = {
+    v => 1.1,
+    summary => 'Sort files in a directory and display the result in a flexible way',
+    description => <<'MARKDOWN',
+
+
+MARKDOWN
+    args => {
+        %argspecs_common,
+        %argspecs_sort,
     },
     args_rels => {
-        choose_one => [qw/by_field by_sortsub by_code/],
+        'choose_one&' => [
+            [qw/by_field by_sortsub by_code/],
+            [qw/num_results num_ranks/],
+        ],
     },
 };
 sub sort_files {
@@ -95,59 +144,113 @@ sub sort_files {
     my $dir = $args{dir} // '.';
     opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
     my @files;
-    while (defined(my $e) = readdir $dh) {
-        next if $e eq '.' || $e eq '..';
-        $rec = {name=>$e};
-        my @st = lstat $e or do {
-            warn "Can't stat '$e' in '$dir': $!, skipped";
-            next;
-        };
-        $rec->{size} = $st[7];
-        $rec->{mtime} = $st[9];
-        $rec->{ctime} = $st[10];
-        push @files, $rec;
-    }
-    closedir $dh;
+  GET_FILES: {
+      FILE:
+        while (defined(my $e = readdir $dh)) {
+            next if $e eq '.' || $e eq '..';
+            my $rec = {name=>$e};
+            my @st = lstat $e or do {
+                warn "Can't stat '$e' in '$dir': $!, skipped";
+                next;
+            };
+            $rec->{size} = $st[7];
+            $rec->{mtime} = $st[9];
+            $rec->{ctime} = $st[10];
+            $rec->{mode} = $st[2];
+          FILTER: {
+                if (defined $args{type}) {
+                    if ($args{type} eq 'file') {
+                        unless ($rec->{mode} & S_IFREG) {
+                            log_trace "File '$e' in '$dir': not a regular file, skipped";
+                            next FILE;
+                        }
+                    } elsif ($args{type} eq 'dir') {
+                        unless ($rec->{mode} & S_IFDIR) {
+                            log_trace "File '$e' in '$dir': not a directory, skipped";
+                            next FILE;
+                        }
+                    } else {
+                        return [400, "Invalid value of type '$args{type}'"];
+                    }
+                }
+            }
+
+            push @files, $rec;
+        }
+        closedir $dh;
+    } # GET_FILES
 
     my ($code_key, $code_cmp);
   SET_CODE_CMP: {
         if (defined $args{key}) {
-            $code_key = $key;
+            $code_key = $args{key};
         }
+
         if (defined $args{by_code}) {
-            $code_key //= sub { $_ };
+            $code_key //= sub { $_[0] };
             $code_cmp = $args{by_code};
             last;
         }
 
+        if (defined $args{by_sortsub}) {
+            require Sort::Sub;
+            $code_key //= sub { $_[0]->{name} };
+            $code_cmp = Sort::Sub::gen_sorter($args{by_sortsub}, $args{sortsub_args});
+        }
+
         if (defined $args{by_field}) {
             if ($args{by_field} eq 'name') {
-                $code_key //= sub { $_->{name} };
-                $code_cmp = sub { $a cmp $b };
+                $code_key //= sub { $_[0]->{name} };
+                $code_cmp = sub { $_[0] cmp $_[1] };
             } elsif ($args{by_field} eq 'size') {
-                $code_key //= sub { $_->{size} };
-                $code_cmp = sub { $a <=> $b };
+                $code_key //= sub { $_[0]->{size} };
+                $code_cmp = sub { $_[0] <=> $_[1] };
             } elsif ($args{by_field} eq 'ctime') {
-                $code_key //= sub { $_->{ctime} };
-                $code_cmp = sub { $a <=> $b };
+                $code_key //= sub { $_[0]->{ctime} };
+                $code_cmp = sub { $_[0] <=> $_[1] };
             } elsif ($args{by_field} eq 'mtime') {
-                $code_key //= sub { $_->{mtime} };
-                $code_cmp = sub { $a <=> $b };
+                $code_key //= sub { $_[0]->{mtime} };
+                $code_cmp = sub { $_[0] <=> $_[1] };
             } else {
                 return [400, "Invalid value in by_field: $args{by_field}"];
             }
+            last;
         }
 
         return [400, "Please specify one of by_field/by_sortsub/by_code"];
     } # SET_CODE_CMP
 
   SORT: {
-        @files = sub {
-            $a = $code_key->($a);
-            $b = $code_key->($b);
-            $code_cmp->($a, $b);
+        @files = sort {
+            ;
+            my ($key1, $key2);
+            {
+                local $_ = $a;
+                $key1 = $code_key->($a);
+            }
+            {
+                local $_ = $b;
+                $key2 = $code_key->($b);
+            }
+            $args{reverse} ? $code_cmp->($key2, $key1) : $code_cmp->($key1, $key2);
         } @files;
     } # SORT
+
+  NUM_RESULTS: {
+        last unless defined $args{num_results} && $args{num_results} > 0;
+        last unless $args{num_results} < @files;
+        splice @files, $args{num_results};
+    }
+
+  NUM_RANKS: {
+        last unless defined $args{num_ranks} && $args{num_ranks} > 0;
+
+        return [501, "Not yet implemented"];
+        #require List::Rank;
+        #my @filenames = map { $_->{name} } @files;
+        #my @ranks = List::Rank::rankstr(
+        #splice @files, $args{num_results};
+    }
 
     unless ($args{detail}) {
         @files = map { $_->{name} } @files;
@@ -155,6 +258,204 @@ sub sort_files {
 
     [200, "OK", \@files];
 }
+
+# foremost
+gen_modified_sub(
+    die => 1,
+    output_name => 'foremost',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return file(s) which are alphabetically the first',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return foremost file in current directory
+    % foremost -f
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'name',
+        );
+    },
+);
+
+# hindmost
+gen_modified_sub(
+    die => 1,
+    output_name => 'hindmost',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return file(s) which are alphabetically the last',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return hindmost file in current directory
+    % hindmost -f
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'name',
+            reverse => 1,
+        );
+    },
+);
+
+# largest
+gen_modified_sub(
+    die => 1,
+    output_name => 'largest',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return the largest file(s) in a directory',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return largest file in current directory
+    % largest -f
+
+    # return largest file(s) in /some/dir (if there are multiple files with the
+    # same size they will all be returned
+    % largest -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'size',
+            reverse => 1,
+        );
+    },
+);
+
+# smallest
+gen_modified_sub(
+    die => 1,
+    output_name => 'smallest',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return the smallest file(s) in a directory',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return smallest file in current directory
+    % smallest -f
+
+    # return smallest file(s) in /some/dir (if there are multiple files with the
+    # same size they will all be returned
+    % smallest -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'size',
+            reverse => 1,
+        );
+    },
+);
+
+# newest
+gen_modified_sub(
+    die => 1,
+    output_name => 'newest',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return the newest file(s) in a directory',
+    description => <<'MARKDOWN',
+
+File is deemed as newest by its mtime.
+
+Some examples:
+
+    # return newest file in current directory
+    % newest -f
+
+    # return newest file(s) in /some/dir (if there are multiple files with the
+    # same newest mtime) they will all be returned
+    % newest -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'mtime',
+        );
+    },
+);
+
+# oldest
+gen_modified_sub(
+    die => 1,
+    output_name => 'oldest',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return the oldest file(s) in a directory',
+    description => <<'MARKDOWN',
+
+File is deemed as oldest by its mtime.
+
+Some examples:
+
+    # return oldest file in current directory
+    % oldest -f
+
+    # return oldest file(s) in /some/dir (if there are multiple files with the
+    # same oldest mtime) they will all be returned
+    % oldest -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_field => 'mtime',
+            reverse => 1,
+        );
+    },
+);
 
 1;
 #ABSTRACT: Utilities related to sorting files in a directory
