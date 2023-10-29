@@ -54,12 +54,12 @@ our %argspecs_common = (
         schema => 'uint*',
         description => <<'MARKDOWN',
 
-Difference between `num_results` and `num_ranks`: `num_results` specifies number
-of results regardless of ranks while `num_ranks` (`-n` option) returns number of
-ranks. For example, if sorting is by reverse size and if `num_results` is set to
-1 and there are 2 files with the same largest size then only 1 of those files
-will be returned. With `num_ranks` set to 1, both files will be returned because
-are they both rank #1.
+Difference between `num_results` and `num_ranks`: `num_results` (`-n` option)
+specifies number of results regardless of ranks while `num_ranks` (`-N` option)
+returns number of ranks. For example, if sorting is by reverse size and if
+`num_results` is set to 1 and there are 2 files with the same largest size then
+only 1 of those files will be returned. With `num_ranks` set to 1, both files
+will be returned because are they both rank #1.
 
 MARKDOWN
         cmdline_aliases => {N=>{}},
