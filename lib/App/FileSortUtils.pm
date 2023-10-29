@@ -120,6 +120,14 @@ MARKDOWN
     },
 );
 
+our %argspec_ignore_case = (
+    ignore_case => {
+        schema => 'bool*',
+        cmdline_aliases => {i=>{}},
+        tags => ['category:sorting'],
+    },
+);
+
 $SPEC{sort_files} = {
     v => 1.1,
     summary => 'Sort files in a directory and display the result in a flexible way',
@@ -265,6 +273,9 @@ gen_modified_sub(
     output_name => 'foremost',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
+    add_args => {
+        %argspec_ignore_case,
+    },
     summary => 'Return file(s) which are alphabetically the first',
     description => <<'MARKDOWN',
 
@@ -284,6 +295,7 @@ MARKDOWN
         sort_files(
             %args,
             by_field => 'name',
+            ($args{ignore_case} ? (key=>sub {lc $_[0]{name}}) : ()),
         );
     },
 );
@@ -294,6 +306,9 @@ gen_modified_sub(
     output_name => 'hindmost',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
+    add_args => {
+        %argspec_ignore_case,
+    },
     summary => 'Return file(s) which are alphabetically the last',
     description => <<'MARKDOWN',
 
@@ -313,6 +328,7 @@ MARKDOWN
         sort_files(
             %args,
             by_field => 'name',
+            ($args{ignore_case} ? (key=>sub {lc $_[0]{name}}) : ()),
             reverse => 1,
         );
     },
