@@ -498,6 +498,72 @@ MARKDOWN
     },
 );
 
+# longest_name
+gen_modified_sub(
+    die => 1,
+    output_name => 'longest_name',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return file(s) with the longest name in a directory',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return file with the longest name in current directory
+    % longest-name -f
+
+    # return file(s) with the longest name in /some/dir. if there are multiple
+    # files with the same length, they will all be returned.
+    % longest-name -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_code => sub { length($_[1]{name}) <=> length($_[0]{name}) },
+        );
+    },
+);
+
+# shortest_name
+gen_modified_sub(
+    die => 1,
+    output_name => 'shortest_name',
+    base_name => 'sort_files',
+    remove_args => [keys %argspecs_sort],
+    summary => 'Return file(s) with the shortest name in a directory',
+    description => <<'MARKDOWN',
+
+Some examples:
+
+    # return file with the shortest name in current directory
+    % shortest-name -f
+
+    # return file(s) with the shortest name in /some/dir. if there are multiple
+    # files with the same length, they will all be returned.
+    % shortest-name -N1 -f /some/dir
+
+MARKDOWN
+    output_code => sub {
+        my %args = @_;
+
+        unless (defined $args{num_results} || defined $args{num_ranks}) {
+            $args{num_results} = 1;
+        }
+
+        sort_files(
+            %args,
+            by_code => sub { length($_[0]{name}) <=> length($_[1]{name}) },
+        );
+    },
+);
+
 1;
 #ABSTRACT: Utilities related to sorting files in a directory
 
