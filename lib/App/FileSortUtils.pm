@@ -228,43 +228,58 @@ sub sort_files {
         return [400, "Please specify one of by_field/by_sortsub/by_code"];
     } # SET_CODE_CMP
 
+    my (@ranks, @sorted_files);
   SORT: {
-        @files = sort {
-            ;
-            my ($key1, $key2);
-            {
-                local $_ = $a;
-                $key1 = $code_key->($a);
-            }
-            {
-                local $_ = $b;
-                $key2 = $code_key->($b);
-            }
-            $args{reverse} ? $code_cmp->($key2, $key1) : $code_cmp->($key1, $key2);
-        } @files;
+        require List::Rank;
+
+        my @res = List::Rank::sortrankby(
+            sub {
+                ;
+                my ($key1, $key2);
+                {
+                    local $_ = $a;
+                    $key1 = $code_key->($a);
+                }
+                {
+                    local $_ = $b;
+                    $key2 = $code_key->($b);
+                }
+                $args{reverse} ? $code_cmp->($key2, $key1) : $code_cmp->($key1, $key2);
+            },
+            @files
+        );
+        while (my ($e1, $e2) = splice @res, 0, 2) {
+            push @sorted_files, $e1;
+            push @ranks, $e2;
+        }
     } # SORT
 
   NUM_RESULTS: {
         last unless defined $args{num_results} && $args{num_results} > 0;
-        last unless $args{num_results} < @files;
-        splice @files, $args{num_results};
+        last unless $args{num_results} < @sorted_files;
+        splice @sorted_files, $args{num_results};
     }
 
   NUM_RANKS: {
         last unless defined $args{num_ranks} && $args{num_ranks} > 0;
-
-        return [501, "Not yet implemented"];
-        #require List::Rank;
-        #my @filenames = map { $_->{name} } @files;
-        #my @ranks = List::Rank::rankstr(
-        #splice @files, $args{num_results};
+        my @res;
+        my $i = -1;
+        while (1) {
+            $i++;
+            last if $i >= @sorted_files;
+            my $rank = $ranks[$i];
+            $rank =~ s/=\z//;
+            last if $rank > $args{num_ranks};
+            push @res, $sorted_files[$i];
+        }
+        @sorted_files = @res;
     }
 
     unless ($args{detail}) {
-        @files = map { $_->{name} } @files;
+        @sorted_files = map { $_->{name} } @sorted_files;
     }
 
-    [200, "OK", \@files];
+    [200, "OK", \@sorted_files];
 }
 
 # foremost
