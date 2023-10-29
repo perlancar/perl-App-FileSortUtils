@@ -395,6 +395,16 @@ gen_modified_sub(
     summary => 'Return the newest file(s) in a directory',
     description => <<'MARKDOWN',
 
+Suppose a new file is downloaded in `~/Downloads`, but you are not sure of its
+name. You just want to move that file, which you are pretty sure is the newest
+in the `Downloads` directory, somewhere else. So from the CLI in `~/Downloads`:
+
+    % mv `newest -f` /somewhere/else
+
+or, from `/somewhere/else`:
+
+    % mv `newest -f ~/Downloads` .
+
 File is deemed as newest by its mtime.
 
 Some examples:
