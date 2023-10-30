@@ -277,8 +277,10 @@ sub sort_files {
         @sorted_files = @res;
     }
 
-    unless ($args{detail}) {
-        @sorted_files = map { $_->{name} } @sorted_files;
+    if ($args{detail}) {
+        for (@sorted_files) { $_->{dir} = $dir }
+    } else {
+        @sorted_files = map { ($dir eq '.' ? '' : $dir eq '/' ? '/' : "$dir/") . $_->{name} } @sorted_files;
     }
 
     [200, "OK", \@sorted_files];
