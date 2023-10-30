@@ -7,6 +7,7 @@ use Log::ger;
 
 use Exporter 'import';
 use Fcntl ':mode';
+use File::chdir;
 use Perinci::Sub::Util qw(gen_modified_sub);
 
 # AUTHORITY
@@ -33,8 +34,8 @@ our %argspecs_common = (
         schema => ['str*', in=>\@file_types],
         cmdline_aliases => {
             t => {},
-            f => {summary=>'Shortcut for --type=file', is_flag=>1, code=>sub { $_[0]{type} = 'file' }},
-            d => {summary=>'Shortcut for --type=dir' , is_flag=>1, code=>sub { $_[0]{type} = 'dir'  }},
+            f => {summary=>'Shortcut for `--type=file`', is_flag=>1, code=>sub { $_[0]{type} = 'file' }},
+            d => {summary=>'Shortcut for `--type=dir`' , is_flag=>1, code=>sub { $_[0]{type} = 'dir'  }},
         },
         tags => ['category:filtering'],
     },
@@ -153,6 +154,7 @@ sub sort_files {
     opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
     my @files;
   GET_FILES: {
+        local $CWD = $dir;
       FILE:
         while (defined(my $e = readdir $dh)) {
             next if $e eq '.' || $e eq '..';
