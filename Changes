@@ -1,3 +1,8 @@
+0.004   2023-10-30  Released-By: PERLANCAR; Urgency: high
+
+        - [bugfix] Return result with directory.
+
+
 0.003   2023-10-30  Released-By: PERLANCAR; Urgency: high
 
         - [bugfix] Fix logic bug for newest/oldest/smallest.
