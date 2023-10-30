@@ -1,4 +1,12 @@
-0.002   2023-10-29  Released-By: PERLANCAR; Urgency: medium
+0.003   2023-10-30  Released-By: PERLANCAR; Urgency: high
+
+        - [bugfix] Fix logic bug for newest/oldest/smallest.
+
+        - [bugfix] Temporarily chdir to target dir to be able to stat all
+          the files.
+
+
+0.002   2023-10-29  Released-By: PERLANCAR; Urgency: medium; Broken: yes
 
         - Add utilities: longest-name, shortest-name.
 
@@ -11,6 +19,6 @@
         - [doc] [cli newest] Add real-world example.
 
 
-0.001   2023-10-28  Released-By: PERLANCAR
+0.001   2023-10-28  Released-By: PERLANCAR; Broken: yes
 
         - First release.
