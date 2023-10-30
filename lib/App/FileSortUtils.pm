@@ -414,7 +414,6 @@ MARKDOWN
         sort_files(
             %args,
             by_field => 'size',
-            reverse => 1,
         );
     },
 );
@@ -460,6 +459,7 @@ MARKDOWN
         sort_files(
             %args,
             by_field => 'mtime',
+            reverse => 1,
         );
     },
 );
@@ -495,7 +495,6 @@ MARKDOWN
         sort_files(
             %args,
             by_field => 'mtime',
-            reverse => 1,
         );
     },
 );
