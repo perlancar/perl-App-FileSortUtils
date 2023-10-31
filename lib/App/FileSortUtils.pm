@@ -440,6 +440,10 @@ or, from `/somewhere/else`:
 
     % mv `newest -f ~/Downloads` .
 
+If you want to see the filename on stderr as well:
+
+    % mv `newest --verbose -f ~/Downloads` .
+
 File is deemed as newest by its mtime.
 
 Some examples:
