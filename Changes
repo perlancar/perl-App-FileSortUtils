@@ -1,3 +1,10 @@
+0.005   2023-10-31  Released-By: PERLANCAR; Urgency: medium
+
+        - [ux] Add log statement so e.g. in commands like "mv `newest
+          --verbose -f ~/Downloads` .", the filename can be shown to
+          stderr.
+
+
 0.004   2023-10-30  Released-By: PERLANCAR; Urgency: high
 
         - [bugfix] Return result with directory.
