@@ -282,6 +282,7 @@ sub sort_files {
     } else {
         @sorted_files = map { ($dir eq '.' ? '' : $dir eq '/' ? '/' : "$dir/") . $_->{name} } @sorted_files;
     }
+    log_info "Sorted files: %s", \@sorted_files;
 
     [200, "OK", \@sorted_files];
 }
