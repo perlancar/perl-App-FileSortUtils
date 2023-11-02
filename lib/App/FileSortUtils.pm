@@ -337,6 +337,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
@@ -373,6 +374,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
@@ -474,6 +476,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Suppose a new file is downloaded in `~/Downloads`, but you are not sure of its
@@ -527,6 +530,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 File is deemed as oldest by its mtime.
@@ -565,6 +569,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
@@ -601,6 +606,7 @@ gen_modified_sub(
     description => <<'MARKDOWN',
 
 Notes:
+
 - by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
