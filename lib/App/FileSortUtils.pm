@@ -39,6 +39,24 @@ our %argspecs_common = (
         },
         tags => ['category:filtering'],
     },
+    exclude_filename_pattern => {
+        summary => 'Exclude filenames that match a regex pattern',
+        schema => 're_from_str*',
+        cmdline_aliases => {X=>{}},
+        tags => ['category:filtering'],
+    },
+    include_filename_pattern => {
+        summary => 'Only include filenames that match a regex pattern',
+        schema => 're_from_str*',
+        cmdline_aliases => {I=>{}},
+        tags => ['category:filtering'],
+    },
+    all => {
+        summary => 'Do not ignore entries starting with .',
+        schema => 'true*',
+        cmdline_aliases => {a=>{}},
+        tags => ['category:filtering'],
+    },
 
     detail => {
         schema => 'true*',
@@ -149,6 +167,7 @@ MARKDOWN
 };
 sub sort_files {
     my %args = @_;
+    my $all = $args{all} // 0;
 
     my $dir = $args{dir} // '.';
     opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
@@ -158,6 +177,24 @@ sub sort_files {
       FILE:
         while (defined(my $e = readdir $dh)) {
             next if $e eq '.' || $e eq '..';
+            if (defined $args{include_filename_pattern}) {
+                unless ($e =~ $args{include_filename_pattern}) {
+                    log_trace "File $e excluded (not match $args{include_filename_pattern})";
+                    next FILE;
+                }
+            }
+            if (defined $args{exclude_filename_pattern}) {
+                if ($e =~ $args{exclude_filename_pattern}) {
+                    log_trace "File $e excluded (matches $args{exclude_filename_pattern})";
+                    next FILE;
+                }
+            }
+            if (!$all) {
+                if ($e =~ /\A\./) {
+                    log_trace "File $e excluded (dotfile hidden)";
+                    next FILE;
+                }
+            }
             my $rec = {name=>$e};
             my @st = lstat $e or do {
                 warn "Can't stat '$e' in '$dir': $!, skipped";
