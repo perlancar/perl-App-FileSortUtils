@@ -336,6 +336,9 @@ gen_modified_sub(
     summary => 'Return file(s) which are alphabetically the first',
     description => <<'MARKDOWN',
 
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
+
 Some examples:
 
     # return foremost file in current directory
@@ -368,6 +371,9 @@ gen_modified_sub(
     },
     summary => 'Return file(s) which are alphabetically the last',
     description => <<'MARKDOWN',
+
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
 
@@ -467,6 +473,9 @@ gen_modified_sub(
     summary => 'Return the newest file(s) in a directory',
     description => <<'MARKDOWN',
 
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
+
 Suppose a new file is downloaded in `~/Downloads`, but you are not sure of its
 name. You just want to move that file, which you are pretty sure is the newest
 in the `Downloads` directory, somewhere else. So from the CLI in `~/Downloads`:
@@ -517,6 +526,9 @@ gen_modified_sub(
     summary => 'Return the oldest file(s) in a directory',
     description => <<'MARKDOWN',
 
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
+
 File is deemed as oldest by its mtime.
 
 Some examples:
@@ -552,6 +564,9 @@ gen_modified_sub(
     summary => 'Return file(s) with the longest name in a directory',
     description => <<'MARKDOWN',
 
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
+
 Some examples:
 
     # return file with the longest name in current directory
@@ -584,6 +599,9 @@ gen_modified_sub(
     remove_args => [keys %argspecs_sort],
     summary => 'Return file(s) with the shortest name in a directory',
     description => <<'MARKDOWN',
+
+Notes:
+- by default dotfiles are not included, use `--all` (`-a`) to include them
 
 Some examples:
 
