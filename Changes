@@ -1,3 +1,8 @@
+0.008   2023-11-14  Released-By: PERLANCAR; Urgency: medium
+
+        - Add option: --recursive (-R).
+
+
 0.007   2023-11-14  Released-By: PERLANCAR; Urgency: medium; Backward-Incompatible: yes
 
         - [enhancement] Allow sorting files in multiple directories.
