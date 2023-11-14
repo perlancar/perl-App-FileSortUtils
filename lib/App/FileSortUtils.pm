@@ -32,6 +32,12 @@ our %argspecs_common = (
         slurpy => 1,
         tags => ['category:input'],
     },
+    recursive => {
+        summary => 'Recurse into subdirectories',
+        schema => 'true*',
+        cmdline_aliases => {R=>{}},
+        tags => ['category:input'],
+    },
 
     type => {
         summary => 'Only include files of certain type',
@@ -172,68 +178,89 @@ MARKDOWN
 sub sort_files {
     my %args = @_;
     my $all = $args{all} // 0;
-
+    my $recursive = $args{recursive};
     my $dirs = $args{dirs} // ['.'];
+
+    my $code_get_recs;
+    $code_get_recs = sub {
+        my $dir = shift;
+
+        opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
+
+        local $CWD = $dir;
+        my @recs;
+      FILE:
+        while (defined(my $e = readdir $dh)) {
+            next if $e eq '.' || $e eq '..';
+            if (defined $args{include_filename_pattern}) {
+                unless ($e =~ $args{include_filename_pattern}) {
+                    log_trace "File $e excluded (not match $args{include_filename_pattern})";
+                    next FILE;
+                }
+            }
+            if (defined $args{exclude_filename_pattern}) {
+                if ($e =~ $args{exclude_filename_pattern}) {
+                    log_trace "File $e excluded (matches $args{exclude_filename_pattern})";
+                    next FILE;
+                }
+            }
+            if (!$all) {
+                if ($e =~ /\A\./) {
+                    log_trace "File $e excluded (dotfile hidden)";
+                    next FILE;
+                }
+            }
+            my $rec = {name=>$e, dir=>$dir};
+            my @st = lstat $e or do {
+                warn "Can't stat '$e' in '$dir': $!, skipped";
+                next;
+            };
+            $rec->{size} = $st[7];
+            $rec->{mtime} = $st[9];
+            $rec->{ctime} = $st[10];
+            $rec->{mode} = $st[2];
+          FILTER: {
+                if (defined $args{type}) {
+                    if ($args{type} eq 'file') {
+                        unless ($rec->{mode} & S_IFREG) {
+                            log_trace "File '$e' in '$dir': not a regular file, skipped";
+                            goto SKIP_ADD_FILE;
+                        }
+                    } elsif ($args{type} eq 'dir') {
+                        unless ($rec->{mode} & S_IFDIR) {
+                            log_trace "File '$e' in '$dir': not a directory, skipped";
+                            goto SKIP_ADD_FILE;
+                        }
+                    } else {
+                        return [400, "Invalid value of type '$args{type}'"];
+                    }
+                }
+            } # FILTER
+
+            push @recs, $rec;
+
+          SKIP_ADD_FILE:
+            if ($recursive && $rec->{mode} & S_IFDIR) {
+                log_trace "Recursing into $dir/$e ...";
+                my $subres = $code_get_recs->($e);
+                if ($subres->[0] == 200) {
+                    push @recs, @{ $subres->[2] };
+                } else {
+                    log_error "Cannot recurse into $dir/$e: $subres->[0] - $subres->[1]";
+                }
+            }
+
+        }
+        closedir $dh;
+        return [200, "OK", \@recs];
+    }; # $code_get_files
 
     my @recs;
   DIR:
     for my $dir (@$dirs) {
-        opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
-
-      GET_FILES: {
-            local $CWD = $dir;
-          FILE:
-            while (defined(my $e = readdir $dh)) {
-                next if $e eq '.' || $e eq '..';
-                if (defined $args{include_filename_pattern}) {
-                    unless ($e =~ $args{include_filename_pattern}) {
-                        log_trace "File $e excluded (not match $args{include_filename_pattern})";
-                        next FILE;
-                    }
-                }
-                if (defined $args{exclude_filename_pattern}) {
-                    if ($e =~ $args{exclude_filename_pattern}) {
-                        log_trace "File $e excluded (matches $args{exclude_filename_pattern})";
-                        next FILE;
-                    }
-                }
-                if (!$all) {
-                    if ($e =~ /\A\./) {
-                        log_trace "File $e excluded (dotfile hidden)";
-                        next FILE;
-                    }
-                }
-                my $rec = {name=>$e, dir=>$dir};
-                my @st = lstat $e or do {
-                    warn "Can't stat '$e' in '$dir': $!, skipped";
-                    next;
-                };
-                $rec->{size} = $st[7];
-                $rec->{mtime} = $st[9];
-                $rec->{ctime} = $st[10];
-                $rec->{mode} = $st[2];
-              FILTER: {
-                    if (defined $args{type}) {
-                        if ($args{type} eq 'file') {
-                            unless ($rec->{mode} & S_IFREG) {
-                                log_trace "File '$e' in '$dir': not a regular file, skipped";
-                                next FILE;
-                            }
-                        } elsif ($args{type} eq 'dir') {
-                            unless ($rec->{mode} & S_IFDIR) {
-                                log_trace "File '$e' in '$dir': not a directory, skipped";
-                                next FILE;
-                            }
-                        } else {
-                            return [400, "Invalid value of type '$args{type}'"];
-                        }
-                    }
-                } # FILTER
-
-            push @recs, $rec;
-            }
-            closedir $dh;
-        } # GET_FILES
+        my $res = $code_get_recs->($dir);
+        return $res unless $res->[0] == 200;
+        push @recs, @{ $res->[2] };
     } # DIR
 
     my ($code_key, $code_cmp);
