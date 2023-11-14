@@ -22,10 +22,14 @@ my @file_types = qw(file dir);
 my @file_fields = qw(name size mtime ctime);
 
 our %argspecs_common = (
-    dir => {
+    dirs => {
+        'x.name.is_plural' => 1,
+        'x.name.singular' => 'dir',
         summary => 'Directory to sort files of, defaults to current directory',
-        schema => 'dirname::default_curdir',
+        schema => ['array*', of=>'dirname*', min_len=>1],
+        default => ['.'],
         pos => 0,
+        slurpy => 1,
         tags => ['category:input'],
     },
 
@@ -149,7 +153,7 @@ our %argspec_ignore_case = (
 
 $SPEC{sort_files} = {
     v => 1.1,
-    summary => 'Sort files in a directory and display the result in a flexible way',
+    summary => 'Sort files in one or more directories and display the result in a flexible way',
     description => <<'MARKDOWN',
 
 
@@ -169,63 +173,68 @@ sub sort_files {
     my %args = @_;
     my $all = $args{all} // 0;
 
-    my $dir = $args{dir} // '.';
-    opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
-    my @files;
-  GET_FILES: {
-        local $CWD = $dir;
-      FILE:
-        while (defined(my $e = readdir $dh)) {
-            next if $e eq '.' || $e eq '..';
-            if (defined $args{include_filename_pattern}) {
-                unless ($e =~ $args{include_filename_pattern}) {
-                    log_trace "File $e excluded (not match $args{include_filename_pattern})";
-                    next FILE;
-                }
-            }
-            if (defined $args{exclude_filename_pattern}) {
-                if ($e =~ $args{exclude_filename_pattern}) {
-                    log_trace "File $e excluded (matches $args{exclude_filename_pattern})";
-                    next FILE;
-                }
-            }
-            if (!$all) {
-                if ($e =~ /\A\./) {
-                    log_trace "File $e excluded (dotfile hidden)";
-                    next FILE;
-                }
-            }
-            my $rec = {name=>$e};
-            my @st = lstat $e or do {
-                warn "Can't stat '$e' in '$dir': $!, skipped";
-                next;
-            };
-            $rec->{size} = $st[7];
-            $rec->{mtime} = $st[9];
-            $rec->{ctime} = $st[10];
-            $rec->{mode} = $st[2];
-          FILTER: {
-                if (defined $args{type}) {
-                    if ($args{type} eq 'file') {
-                        unless ($rec->{mode} & S_IFREG) {
-                            log_trace "File '$e' in '$dir': not a regular file, skipped";
-                            next FILE;
-                        }
-                    } elsif ($args{type} eq 'dir') {
-                        unless ($rec->{mode} & S_IFDIR) {
-                            log_trace "File '$e' in '$dir': not a directory, skipped";
-                            next FILE;
-                        }
-                    } else {
-                        return [400, "Invalid value of type '$args{type}'"];
+    my $dirs = $args{dirs} // ['.'];
+
+    my @recs;
+  DIR:
+    for my $dir (@$dirs) {
+        opendir my $dh, $dir or return [500, "Can't opendir '$dir': $!"];
+
+      GET_FILES: {
+            local $CWD = $dir;
+          FILE:
+            while (defined(my $e = readdir $dh)) {
+                next if $e eq '.' || $e eq '..';
+                if (defined $args{include_filename_pattern}) {
+                    unless ($e =~ $args{include_filename_pattern}) {
+                        log_trace "File $e excluded (not match $args{include_filename_pattern})";
+                        next FILE;
                     }
                 }
-            }
+                if (defined $args{exclude_filename_pattern}) {
+                    if ($e =~ $args{exclude_filename_pattern}) {
+                        log_trace "File $e excluded (matches $args{exclude_filename_pattern})";
+                        next FILE;
+                    }
+                }
+                if (!$all) {
+                    if ($e =~ /\A\./) {
+                        log_trace "File $e excluded (dotfile hidden)";
+                        next FILE;
+                    }
+                }
+                my $rec = {name=>$e, dir=>$dir};
+                my @st = lstat $e or do {
+                    warn "Can't stat '$e' in '$dir': $!, skipped";
+                    next;
+                };
+                $rec->{size} = $st[7];
+                $rec->{mtime} = $st[9];
+                $rec->{ctime} = $st[10];
+                $rec->{mode} = $st[2];
+              FILTER: {
+                    if (defined $args{type}) {
+                        if ($args{type} eq 'file') {
+                            unless ($rec->{mode} & S_IFREG) {
+                                log_trace "File '$e' in '$dir': not a regular file, skipped";
+                                next FILE;
+                            }
+                        } elsif ($args{type} eq 'dir') {
+                            unless ($rec->{mode} & S_IFDIR) {
+                                log_trace "File '$e' in '$dir': not a directory, skipped";
+                                next FILE;
+                            }
+                        } else {
+                            return [400, "Invalid value of type '$args{type}'"];
+                        }
+                    }
+                } # FILTER
 
-            push @files, $rec;
-        }
-        closedir $dh;
-    } # GET_FILES
+            push @recs, $rec;
+            }
+            closedir $dh;
+        } # GET_FILES
+    } # DIR
 
     my ($code_key, $code_cmp);
   SET_CODE_CMP: {
@@ -267,7 +276,7 @@ sub sort_files {
         return [400, "Please specify one of by_field/by_sortsub/by_code"];
     } # SET_CODE_CMP
 
-    my (@ranks, @sorted_files);
+    my (@ranks, @sorted_recs);
   SORT: {
         require List::Rank;
 
@@ -285,18 +294,18 @@ sub sort_files {
                 }
                 $args{reverse} ? $code_cmp->($key2, $key1) : $code_cmp->($key1, $key2);
             },
-            @files
+            @recs
         );
         while (my ($e1, $e2) = splice @res, 0, 2) {
-            push @sorted_files, $e1;
+            push @sorted_recs, $e1;
             push @ranks, $e2;
         }
     } # SORT
 
   NUM_RESULTS: {
         last unless defined $args{num_results} && $args{num_results} > 0;
-        last unless $args{num_results} < @sorted_files;
-        splice @sorted_files, $args{num_results};
+        last unless $args{num_results} < @sorted_recs;
+        splice @sorted_recs, $args{num_results};
     }
 
   NUM_RANKS: {
@@ -305,23 +314,22 @@ sub sort_files {
         my $i = -1;
         while (1) {
             $i++;
-            last if $i >= @sorted_files;
+            last if $i >= @sorted_recs;
             my $rank = $ranks[$i];
             $rank =~ s/=\z//;
             last if $rank > $args{num_ranks};
-            push @res, $sorted_files[$i];
+            push @res, $sorted_recs[$i];
         }
-        @sorted_files = @res;
+        @sorted_recs = @res;
     }
 
     if ($args{detail}) {
-        for (@sorted_files) { $_->{dir} = $dir }
     } else {
-        @sorted_files = map { ($dir eq '.' ? '' : $dir eq '/' ? '/' : "$dir/") . $_->{name} } @sorted_files;
+        @sorted_recs = map { ($_->{dir} eq '.' ? '' : $_->{dir} eq '/' ? '/' : "$_->{dir}/") . $_->{name} } @sorted_recs;
     }
-    log_info "Sorted files: %s", \@sorted_files;
+    log_info "Sorted files: %s", \@sorted_recs;
 
-    [200, "OK", \@sorted_files];
+    [200, "OK", \@sorted_recs];
 }
 
 # foremost
@@ -405,7 +413,7 @@ gen_modified_sub(
     output_name => 'largest',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return the largest file(s) in a directory',
+    summary => 'Return the largest file(s) in one or more directories',
     description => <<'MARKDOWN',
 
 Some examples:
@@ -439,7 +447,7 @@ gen_modified_sub(
     output_name => 'smallest',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return the smallest file(s) in a directory',
+    summary => 'Return the smallest file(s) in one or more directories',
     description => <<'MARKDOWN',
 
 Some examples:
@@ -472,7 +480,7 @@ gen_modified_sub(
     output_name => 'newest',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return the newest file(s) in a directory',
+    summary => 'Return the newest file(s) in one or more directories',
     description => <<'MARKDOWN',
 
 Notes:
@@ -526,7 +534,7 @@ gen_modified_sub(
     output_name => 'oldest',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return the oldest file(s) in a directory',
+    summary => 'Return the oldest file(s) in one or more directories',
     description => <<'MARKDOWN',
 
 Notes:
@@ -565,7 +573,7 @@ gen_modified_sub(
     output_name => 'longest_name',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return file(s) with the longest name in a directory',
+    summary => 'Return file(s) with the longest name in one or more directories',
     description => <<'MARKDOWN',
 
 Notes:
@@ -602,7 +610,7 @@ gen_modified_sub(
     output_name => 'shortest_name',
     base_name => 'sort_files',
     remove_args => [keys %argspecs_sort],
-    summary => 'Return file(s) with the shortest name in a directory',
+    summary => 'Return file(s) with the shortest name in one or more directories',
     description => <<'MARKDOWN',
 
 Notes:
@@ -634,7 +642,7 @@ MARKDOWN
 );
 
 1;
-#ABSTRACT: Utilities related to sorting files in a directory
+#ABSTRACT: Utilities related to sorting files in one or more directories
 
 =head1 DESCRIPTION
 
